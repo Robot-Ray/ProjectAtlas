@@ -1,0 +1,51 @@
+{
+  "run": {
+    "name": "dockvision-windows-vm",
+    "image": "dockur/windows",
+    "remove_existing": false,
+    "start_if_stopped": true,
+    "pull_policy": "missing"
+  },
+  "windows": {
+    "version": "11",
+    "disk_size": "128G",
+    "ram_size": "8G",
+    "cpu_cores": "2",
+    "username": "Docker",
+    "password": "admin",
+    "language": "English",
+    "region": "en-US",
+    "keyboard": "en-US"
+  },
+  "docker": {
+    "detach": true,
+    "restart": "unless-stopped",
+    "stop_timeout": 120,
+    "cap_add": ["NET_ADMIN"],
+    "devices": ["/dev/kvm", "/dev/net/tun"],
+    "ports": [
+      { "host": 8006, "container": 8006, "protocol": "tcp" },
+      { "host": 3389, "container": 3389, "protocol": "tcp" },
+      { "host": 3389, "container": 3389, "protocol": "udp" }
+    ]
+  },
+  "paths": {
+    "windows_storage": "./runtime/windows-storage",
+    "shared": "./runtime/shared",
+    "oem": "./runtime/oem",
+    "state": "./runtime/state"
+  },
+  "agent": {
+    "enabled": true,
+    "heartbeat_file": "agent-heartbeat.json",
+    "launch_status_file": "launcher-status.json",
+    "install_log_file": "agent-install-log.txt",
+    "task_name": "DockVisionAgent",
+    "run_interval_minutes": 1
+  },
+  "launch": {
+    "viewer_url": "http://localhost:8006",
+    "rdp_host": "localhost",
+    "rdp_port": 3389
+  }
+}
