@@ -1,0 +1,19 @@
+{
+  "timestampUtc": "2026-04-05T18:16:53.519096+00:00",
+  "success": false,
+  "message": "Unable to find image 'dockur/windows:latest' locally\ndocker: Error response from daemon: pull access denied for dockur/windows, repository does not exist or may require 'docker login'\n\nRun 'docker run --help' for more information",
+  "container": {
+    "name": "dockvision-windows-vm",
+    "id": null,
+    "status": null
+  },
+  "endpoints": {
+    "viewerUrl": "http://localhost:8006",
+    "rdpHost": "localhost",
+    "rdpPort": 3389
+  },
+  "paths": {
+    "shared": "A:\\Documents\\Sku Shit\\Senior Project\\ProjectAtlas\\DockVision\\server\\runner\\runtime\\shared",
+    "stateFile": "A:\\Documents\\Sku Shit\\Senior Project\\ProjectAtlas\\DockVision\\server\\runner\\runtime\\state\\launcher-status.json"
+  }
+}

@@ -1,0 +1,157 @@
+.RunningTest-Page {
+  min-height: 100vh;
+  padding: 32px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.RunningTest-Box {
+  width: 100%;
+  max-width: 1200px;
+  background: white;
+  border-radius: 16px;
+  padding: 32px;
+  box-sizing: border-box;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.RunningTest-Header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.RunningTest-Title {
+  margin: 0 0 8px 0;
+}
+
+.RunningTest-Subtitle {
+  margin: 0;
+}
+
+.RunningTest-HeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.Status-Badge {
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.Status-Badge.Running {
+  background: #dff6dd;
+  color: #1d6b2f;
+}
+
+.Status-Badge.Pending {
+  background: #fff1cc;
+  color: #8a5a00;
+}
+
+.Status-Badge.Waiting {
+  background: #ececec;
+  color: #555;
+}
+
+.RunningTest-RefreshButton,
+.RunningTest-BackLink {
+  border: none;
+  padding: 10px 16px;
+  border-radius: 10px;
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.RunningTest-RefreshButton {
+  background: #1f1f1f;
+  color: white;
+}
+
+.RunningTest-BackLink {
+  background: #ececec;
+  color: #111;
+}
+
+.RunningTest-LastUpdated {
+  margin-bottom: 20px;
+  font-size: 14px;
+  color: #555;
+}
+
+.RunningTest-Grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.RunningTest-Card {
+  border: 1px solid #e5e5e5;
+  border-radius: 14px;
+  padding: 18px;
+  background: #fafafa;
+}
+
+.RunningTest-CardTitle {
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.RunningTest-CardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.Value-Row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.Value-Label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+}
+
+.Value-Data {
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.RunningTest-Notes {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.RunningTest-Placeholder {
+  margin: 0;
+  color: #666;
+}
+
+.RunningTest-LogBlock {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #111;
+  color: #f5f5f5;
+  padding: 14px;
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.RunningTest-Error {
+  color: #b00020;
+  margin-bottom: 16px;
+}
