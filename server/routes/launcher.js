@@ -1,130 +1,173 @@
 const express = require("express");
 const path = require("path");
-const fs = require("fs");
-const { spawn } = require("child_process");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
 
 const router = express.Router();
+const execFileAsync = promisify(execFile);
 
-let activeLaunchProcess = null;
+const projectRoot = path.resolve(__dirname, "..", "..");
+const windowsVmDir = path.join(projectRoot, "WindowsVm");
+const composeFilePath = path.join(windowsVmDir, "docker-compose.yml");
+const containerName = "windows";
+const legacyContainerName = "dockvision-windows-vm";
 
-const runnerPath = path.resolve(__dirname, "..", "runner", "runner.py");
-const configPath = path.resolve(__dirname, "..", "runner", "config.json");
+let launchInProgress = false;
 
-const runtimeRoot = path.resolve(__dirname, "..", "runner", "runtime");
-const stateFilePath = path.join(runtimeRoot, "state", "launcher-status.json");
-const heartbeatFilePath = path.join(runtimeRoot, "shared", "agent-heartbeat.json");
-const installLogPath = path.join(runtimeRoot, "shared", "agent-install-log.txt");
+async function runDocker(args) {
+  return execFileAsync("docker", args, {
+    cwd: windowsVmDir,
+    windowsHide: true
+  });
+}
 
-function readJsonIfExists(filePath) {
+function buildErrorMessage(err) {
+  return (
+    err?.stderr?.trim() ||
+    err?.stdout?.trim() ||
+    err?.message ||
+    "Unknown Docker error."
+  );
+}
+
+function isMissingContainerError(err) {
+  const message = buildErrorMessage(err);
+  return /No such object|No such container/i.test(message);
+}
+
+async function safeRemoveContainer(name) {
   try {
-    if (!fs.existsSync(filePath)) {
-      return null;
-    }
-
-    const raw = fs.readFileSync(filePath, "utf-8");
-    return JSON.parse(raw);
+    await runDocker(["rm", "-f", name]);
   } catch (err) {
-    console.error(`[readJsonIfExists] Failed to read ${filePath}`, err);
-    return null;
+    if (!isMissingContainerError(err)) {
+      console.warn(`[docker rm] ${buildErrorMessage(err)}`);
+    }
   }
 }
 
-function readTextIfExists(filePath) {
+async function getContainerStatus() {
   try {
-    if (!fs.existsSync(filePath)) {
-      return null;
-    }
+    const { stdout } = await runDocker([
+      "inspect",
+      containerName,
+      "--format",
+      "{{.State.Status}}"
+    ]);
 
-    return fs.readFileSync(filePath, "utf-8");
+    return stdout.trim() || "unknown";
   } catch (err) {
-    console.error(`[readTextIfExists] Failed to read ${filePath}`, err);
-    return null;
-  }
-}
-
-function clearPreviousRuntimeArtifacts() {
-  const filesToRemove = [stateFilePath, heartbeatFilePath, installLogPath];
-
-  for (const filePath of filesToRemove) {
-    try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    } catch (err) {
-      console.error(`[clearPreviousRuntimeArtifacts] Failed to delete ${filePath}`, err);
+    if (isMissingContainerError(err)) {
+      return "not_created";
     }
+
+    throw err;
   }
 }
 
-router.post("/start", (req, res) => {
-  if (activeLaunchProcess) {
+router.post("/start", async (req, res) => {
+  if (launchInProgress) {
     return res.status(409).json({
       success: false,
-      message: "A launcher process is already running."
+      message: "A VM launch is already in progress."
     });
   }
 
-  const isWindows = process.platform === "win32";
-  const command = isWindows ? "py" : "python3";
-  const args = isWindows
-    ? ["-3", runnerPath, configPath]
-    : [runnerPath, configPath];
-
-  clearPreviousRuntimeArtifacts();
+  launchInProgress = true;
 
   try {
-    const child = spawn(command, args, {
-      cwd: path.resolve(__dirname, ".."),
-      stdio: ["ignore", "pipe", "pipe"]
-    });
+    await safeRemoveContainer(legacyContainerName);
 
-    activeLaunchProcess = child;
+    await runDocker([
+      "compose",
+      "-f",
+      composeFilePath,
+      "up",
+      "-d"
+    ]);
 
-    child.stdout.on("data", (data) => {
-      console.log(`[runner stdout] ${data.toString()}`);
-    });
-
-    child.stderr.on("data", (data) => {
-      console.error(`[runner stderr] ${data.toString()}`);
-    });
-
-    child.on("close", (code) => {
-      console.log(`[runner exited] code=${code}`);
-      activeLaunchProcess = null;
-    });
-
-    child.on("error", (err) => {
-      console.error("[runner failed to start]", err);
-      activeLaunchProcess = null;
-    });
+    const status = await getContainerStatus();
 
     return res.status(202).json({
       success: true,
-      message: "Launcher started successfully."
+      message: "Windows VM launched successfully.",
+      launchInProgress: false,
+      launchState: {
+        source: "docker-compose",
+        containerName,
+        composeFile: composeFilePath,
+        status,
+        running: status === "running",
+        webUrl: "http://127.0.0.1:8006/"
+      },
+      agentHeartbeat: null,
+      agentInstallLog: null
     });
   } catch (err) {
-    console.error("[launcher route error]", err);
-    activeLaunchProcess = null;
+    console.error("[launcher start error]", err);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to start launcher process."
+      message: "Failed to launch Windows VM.",
+      error: buildErrorMessage(err)
+    });
+  } finally {
+    launchInProgress = false;
+  }
+});
+
+router.post("/stop", async (req, res) => {
+  try {
+    await runDocker([
+      "compose",
+      "-f",
+      composeFilePath,
+      "down"
+    ]);
+
+    await safeRemoveContainer(legacyContainerName);
+
+    return res.json({
+      success: true,
+      message: "Windows VM stopped successfully."
+    });
+  } catch (err) {
+    console.error("[launcher stop error]", err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to stop Windows VM.",
+      error: buildErrorMessage(err)
     });
   }
 });
 
-router.get("/status", (req, res) => {
-  const launchState = readJsonIfExists(stateFilePath);
-  const agentHeartbeat = readJsonIfExists(heartbeatFilePath);
-  const agentInstallLog = readTextIfExists(installLogPath);
+router.get("/status", async (req, res) => {
+  try {
+    const status = await getContainerStatus();
 
-  return res.json({
-    success: true,
-    launchInProgress: Boolean(activeLaunchProcess),
-    launchState,
-    agentHeartbeat,
-    agentInstallLog
-  });
+    return res.json({
+      success: true,
+      launchInProgress,
+      launchState: {
+        source: "docker-compose",
+        containerName,
+        composeFile: composeFilePath,
+        status,
+        running: status === "running",
+        webUrl: "http://127.0.0.1:8006/"
+      },
+      agentHeartbeat: null,
+      agentInstallLog: null
+    });
+  } catch (err) {
+    console.error("[launcher status error]", err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to read Windows VM status.",
+      error: buildErrorMessage(err)
+    });
+  }
 });
 
 module.exports = router;

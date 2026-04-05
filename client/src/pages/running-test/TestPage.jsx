@@ -41,7 +41,6 @@ const TestPage = () => {
 
   useEffect(() => {
     fetchStatus();
-
     const intervalId = setInterval(fetchStatus, 3000);
     return () => clearInterval(intervalId);
   }, []);
