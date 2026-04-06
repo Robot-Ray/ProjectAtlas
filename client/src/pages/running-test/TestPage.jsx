@@ -50,13 +50,21 @@ const TestPage = () => {
   const agentInstallLog = statusData?.agentInstallLog;
   const launchInProgress = statusData?.launchInProgress;
 
-  const containerStatus = launchState?.container?.status || "pending";
+  const containerStatus = launchState?.status || "pending";
+
   const statusClass =
     containerStatus === "running"
       ? "Status-Badge Running"
       : launchInProgress
       ? "Status-Badge Pending"
       : "Status-Badge Waiting";
+
+  const message =
+    containerStatus === "running"
+      ? "Windows VM launched successfully."
+      : launchInProgress
+      ? "VM launch in progress."
+      : "Waiting for VM launch.";
 
   return (
     <>
@@ -98,40 +106,55 @@ const TestPage = () => {
 
           <div className="RunningTest-Grid">
             <MetadataCard title="Launch Summary">
-              <ValueRow label="Message" value={launchState?.message} />
-              <ValueRow label="Timestamp" value={launchState?.timestampUtc} />
-              <ValueRow label="Launch In Progress" value={launchInProgress ? "Yes" : "No"} />
+              <ValueRow label="Message" value={message} />
+              <ValueRow label="Timestamp" value={lastUpdated || null} />
+              <ValueRow
+                label="Launch In Progress"
+                value={launchInProgress ? "Yes" : "No"}
+              />
             </MetadataCard>
 
             <MetadataCard title="Container">
-              <ValueRow label="Name" value={launchState?.container?.name} />
-              <ValueRow label="ID" value={launchState?.container?.id} />
-              <ValueRow label="Status" value={launchState?.container?.status} />
+              <ValueRow label="Name" value={launchState?.containerName} />
+              <ValueRow label="ID" value="Not exposed yet" />
+              <ValueRow label="Status" value={launchState?.status} />
             </MetadataCard>
 
             <MetadataCard title="Viewer / Connection">
-              <ValueRow label="Viewer URL" value={launchState?.endpoints?.viewerUrl} />
-              <ValueRow label="RDP Host" value={launchState?.endpoints?.rdpHost} />
-              <ValueRow label="RDP Port" value={launchState?.endpoints?.rdpPort} />
+              <ValueRow label="Viewer URL" value={launchState?.webUrl} />
+              <ValueRow label="RDP Host" value="127.0.0.1" />
+              <ValueRow label="RDP Port" value="3389" />
             </MetadataCard>
 
             <MetadataCard title="Runtime Files">
-              <ValueRow label="Shared Path" value={launchState?.paths?.shared} />
-              <ValueRow label="State File" value={launchState?.paths?.stateFile} />
+              <ValueRow label="Compose File" value={launchState?.composeFile} />
+              <ValueRow label="Source" value={launchState?.source} />
             </MetadataCard>
 
             <MetadataCard title="Agent Heartbeat">
               <ValueRow label="Agent Name" value={agentHeartbeat?.agent?.name} />
               <ValueRow label="Agent Status" value={agentHeartbeat?.agent?.status} />
               <ValueRow label="Task Name" value={agentHeartbeat?.agent?.taskName} />
-              <ValueRow label="Interval (minutes)" value={agentHeartbeat?.agent?.intervalMinutes} />
+              <ValueRow
+                label="Interval (minutes)"
+                value={agentHeartbeat?.agent?.intervalMinutes}
+              />
             </MetadataCard>
 
             <MetadataCard title="VM Machine Metadata">
-              <ValueRow label="Computer Name" value={agentHeartbeat?.machine?.computerName} />
+              <ValueRow
+                label="Computer Name"
+                value={agentHeartbeat?.machine?.computerName}
+              />
               <ValueRow label="Username" value={agentHeartbeat?.machine?.username} />
-              <ValueRow label="Heartbeat Time" value={agentHeartbeat?.machine?.timestampUtc} />
-              <ValueRow label="Shared Root" value={agentHeartbeat?.machine?.sharedRoot} />
+              <ValueRow
+                label="Heartbeat Time"
+                value={agentHeartbeat?.machine?.timestampUtc}
+              />
+              <ValueRow
+                label="Shared Root"
+                value={agentHeartbeat?.machine?.sharedRoot}
+              />
             </MetadataCard>
           </div>
 
@@ -144,7 +167,7 @@ const TestPage = () => {
               </ul>
             ) : (
               <p className="RunningTest-Placeholder">
-                Waiting for the VM agent to write outward metadata.
+                VM launch is working. Waiting for the VM agent to write outward metadata.
               </p>
             )}
           </MetadataCard>

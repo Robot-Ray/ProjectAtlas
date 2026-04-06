@@ -1,5 +1,6 @@
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
 
@@ -8,11 +9,49 @@ const execFileAsync = promisify(execFile);
 
 const projectRoot = path.resolve(__dirname, "..", "..");
 const windowsVmDir = path.join(projectRoot, "WindowsVm");
+const windowsVmSharedRoot = path.join(windowsVmDir, "shared");
 const composeFilePath = path.join(windowsVmDir, "docker-compose.yml");
+
 const containerName = "windows";
 const legacyContainerName = "dockvision-windows-vm";
 
+const heartbeatFilePath = path.join(windowsVmSharedRoot, "agent-heartbeat.json");
+const installLogPath = path.join(windowsVmSharedRoot, "agent-install-log.txt");
+
 let launchInProgress = false;
+
+function readJsonIfExists(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+
+    const raw = fs.readFileSync(filePath, "utf-8").trim();
+
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error(`[readJsonIfExists] Failed to read ${filePath}`, err);
+    return null;
+  }
+}
+
+function readTextIfExists(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+
+    const raw = fs.readFileSync(filePath, "utf-8");
+    return raw.trim() ? raw : null;
+  } catch (err) {
+    console.error(`[readTextIfExists] Failed to read ${filePath}`, err);
+    return null;
+  }
+}
 
 async function runDocker(args) {
   return execFileAsync("docker", args, {
@@ -64,6 +103,26 @@ async function getContainerStatus() {
   }
 }
 
+function buildStatusPayload(status) {
+  const agentHeartbeat = readJsonIfExists(heartbeatFilePath);
+  const agentInstallLog = readTextIfExists(installLogPath);
+
+  return {
+    success: true,
+    launchInProgress,
+    launchState: {
+      source: "docker-compose",
+      containerName,
+      composeFile: composeFilePath,
+      status,
+      running: status === "running",
+      webUrl: "http://127.0.0.1:8006/"
+    },
+    agentHeartbeat,
+    agentInstallLog
+  };
+}
+
 router.post("/start", async (req, res) => {
   if (launchInProgress) {
     return res.status(409).json({
@@ -87,21 +146,7 @@ router.post("/start", async (req, res) => {
 
     const status = await getContainerStatus();
 
-    return res.status(202).json({
-      success: true,
-      message: "Windows VM launched successfully.",
-      launchInProgress: false,
-      launchState: {
-        source: "docker-compose",
-        containerName,
-        composeFile: composeFilePath,
-        status,
-        running: status === "running",
-        webUrl: "http://127.0.0.1:8006/"
-      },
-      agentHeartbeat: null,
-      agentInstallLog: null
-    });
+    return res.status(202).json(buildStatusPayload(status));
   } catch (err) {
     console.error("[launcher start error]", err);
 
@@ -144,21 +189,7 @@ router.post("/stop", async (req, res) => {
 router.get("/status", async (req, res) => {
   try {
     const status = await getContainerStatus();
-
-    return res.json({
-      success: true,
-      launchInProgress,
-      launchState: {
-        source: "docker-compose",
-        containerName,
-        composeFile: composeFilePath,
-        status,
-        running: status === "running",
-        webUrl: "http://127.0.0.1:8006/"
-      },
-      agentHeartbeat: null,
-      agentInstallLog: null
-    });
+    return res.json(buildStatusPayload(status));
   } catch (err) {
     console.error("[launcher status error]", err);
 
