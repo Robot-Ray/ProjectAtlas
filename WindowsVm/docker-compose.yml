@@ -17,6 +17,7 @@ services:
     volumes:
       - ./OS:/storage
       - ./shared:/shared
+      - ../server/runner/runtime/oem:/oem
       - /dev/kvm:/dev/kvm
       - /dev/net/tun:/dev/net/tun
     cap_add:

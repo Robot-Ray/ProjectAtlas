@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Navigation from "../../components/Navigation";
+import { getLauncherStatus } from "../../lib/api";
 import "../../TestPage.css";
 
 const MetadataCard = ({ title, children }) => (
@@ -24,13 +25,7 @@ const TestPage = () => {
 
   const fetchStatus = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/launcher/status");
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to load running test data.");
-      }
-
+      const data = await getLauncherStatus();
       setStatusData(data);
       setLastUpdated(new Date().toLocaleTimeString());
       setError("");
@@ -47,8 +42,17 @@ const TestPage = () => {
 
   const launchState = statusData?.launchState;
   const agentHeartbeat = statusData?.agentHeartbeat;
+  const agentTask = statusData?.agentTask;
+  const agentResult = statusData?.agentResult;
+  const guestRuntime = statusData?.guestRuntime;
+  const guestAgent = statusData?.guestAgent;
   const agentInstallLog = statusData?.agentInstallLog;
   const launchInProgress = statusData?.launchInProgress;
+  const resultArtifacts = agentResult?.artifacts
+    ? Object.entries(agentResult.artifacts)
+        .map(([name, value]) => `${name}: ${value}`)
+        .join("\n")
+    : "";
 
   const containerStatus = launchState?.status || "pending";
 
@@ -134,10 +138,11 @@ const TestPage = () => {
             <MetadataCard title="Agent Heartbeat">
               <ValueRow label="Agent Name" value={agentHeartbeat?.agent?.name} />
               <ValueRow label="Agent Status" value={agentHeartbeat?.agent?.status} />
+              <ValueRow label="Agent Version" value={agentHeartbeat?.agent?.version} />
               <ValueRow label="Task Name" value={agentHeartbeat?.agent?.taskName} />
               <ValueRow
-                label="Interval (minutes)"
-                value={agentHeartbeat?.agent?.intervalMinutes}
+                label="Interval (seconds)"
+                value={agentHeartbeat?.agent?.intervalSeconds}
               />
             </MetadataCard>
 
@@ -154,6 +159,47 @@ const TestPage = () => {
               <ValueRow
                 label="Shared Root"
                 value={agentHeartbeat?.machine?.sharedRoot}
+              />
+            </MetadataCard>
+
+            <MetadataCard title="Queued Task">
+              <ValueRow label="Task ID" value={agentTask?.taskId} />
+              <ValueRow label="Type" value={agentTask?.taskType} />
+              <ValueRow label="Status" value={agentTask?.status} />
+              <ValueRow label="Created" value={agentTask?.createdUtc} />
+            </MetadataCard>
+
+            <MetadataCard title="Agent Result">
+              <ValueRow label="Status" value={agentResult?.status} />
+              <ValueRow label="Message" value={agentResult?.message} />
+              <ValueRow label="Finished" value={agentResult?.finishedUtc} />
+              <ValueRow
+                label="Backend"
+                value={agentResult?.details?.automationBackend}
+              />
+            </MetadataCard>
+
+            <MetadataCard title="Guest Runtime">
+              <ValueRow label="Synced" value={guestRuntime?.syncedUtc} />
+              <ValueRow
+                label="Files"
+                value={guestRuntime?.files?.join(", ")}
+              />
+            </MetadataCard>
+
+            <MetadataCard title="Guest Agent Readiness">
+              <ValueRow label="State" value={guestAgent?.state} />
+              <ValueRow label="Message" value={guestAgent?.message} />
+              <ValueRow label="Expected Version" value={guestAgent?.expectedVersion} />
+              <ValueRow label="Current Version" value={guestAgent?.currentVersion} />
+              <ValueRow
+                label="Heartbeat Age"
+                value={
+                  guestAgent?.heartbeatAgeSeconds === null ||
+                  guestAgent?.heartbeatAgeSeconds === undefined
+                    ? null
+                    : `${guestAgent.heartbeatAgeSeconds}s`
+                }
               />
             </MetadataCard>
           </div>
@@ -175,6 +221,12 @@ const TestPage = () => {
           <MetadataCard title="Agent Install Log">
             <pre className="RunningTest-LogBlock">
               {agentInstallLog || "No install log captured yet."}
+            </pre>
+          </MetadataCard>
+
+          <MetadataCard title="Artifacts">
+            <pre className="RunningTest-LogBlock">
+              {resultArtifacts || "No artifacts reported yet."}
             </pre>
           </MetadataCard>
         </div>

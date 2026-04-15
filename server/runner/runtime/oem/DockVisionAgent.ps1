@@ -146,7 +146,9 @@ function Write-ResultFile {
         [string]$SharedRoot,
         [string]$TaskId,
         [string]$Status,
-        [string]$Message
+        [string]$Message,
+        [hashtable]$Artifacts = @{},
+        [hashtable]$Details = @{}
     )
 
     # Write a result file for the completed task so the host can observe the outcome.
@@ -157,10 +159,291 @@ function Write-ResultFile {
         status = $Status
         finishedUtc = Get-UtcTimestamp
         message = $Message
-        artifacts = @{}
+        artifacts = $Artifacts
+        details = $Details
     }
 
     $result | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 -Path $resultPath
+}
+
+function Write-ResultObject {
+    param(
+        [string]$SharedRoot,
+        [object]$ResultObject
+    )
+
+    $resultPath = Join-Path $SharedRoot "agent-result.json"
+    $ResultObject | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 -Path $resultPath
+}
+
+function Get-TaskPayloadValue {
+    param(
+        [object]$Task,
+        [string]$Name,
+        [object]$DefaultValue
+    )
+
+    if ($Task.PSObject.Properties.Name -contains "payload" -and $null -ne $Task.payload) {
+        $property = $Task.payload.PSObject.Properties[$Name]
+        if ($null -ne $property -and $null -ne $property.Value) {
+            return $property.Value
+        }
+    }
+
+    return $DefaultValue
+}
+
+function ConvertTo-Boolean {
+    param([object]$Value)
+
+    if ($Value -is [bool]) {
+        return $Value
+    }
+
+    if ($Value -is [string]) {
+        return $Value.Trim().ToLowerInvariant() -in @("1", "true", "yes", "y", "on")
+    }
+
+    return [bool]$Value
+}
+
+function Get-DefaultNotepadText {
+    param([string]$TaskId)
+
+    return "DockVision Notepad proof of concept`r`nTask: $TaskId`r`nUTC: $(Get-UtcTimestamp)`r`nTyped through the Windows guest agent."
+}
+
+function Ensure-User32Type {
+    if (-not ([System.Management.Automation.PSTypeName]"DockVision.User32").Type) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+namespace DockVision {
+    public static class User32 {
+        [DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    }
+}
+"@
+    }
+}
+
+function Wait-ForMainWindow {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [int]$TimeoutSeconds = 20
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $Process.Refresh()
+        if ($Process.MainWindowHandle -ne [IntPtr]::Zero) {
+            return $Process.MainWindowHandle
+        }
+
+        Start-Sleep -Milliseconds 250
+    }
+
+    throw "Timed out waiting for Notepad main window."
+}
+
+function Focus-Window {
+    param([IntPtr]$WindowHandle)
+
+    Ensure-User32Type
+    [DockVision.User32]::ShowWindow($WindowHandle, 9) | Out-Null
+    [DockVision.User32]::SetForegroundWindow($WindowHandle) | Out-Null
+    Start-Sleep -Milliseconds 350
+}
+
+function ConvertTo-SendKeysLiteral {
+    param([string]$Character)
+
+    switch ($Character) {
+        "`r" { return $null }
+        "`n" { return "{ENTER}" }
+        "`t" { return "{TAB}" }
+        "{" { return "{{}" }
+        "}" { return "{}}" }
+        default {
+            if ("+^%~()[]".Contains($Character)) {
+                return "{$Character}"
+            }
+
+            return $Character
+        }
+    }
+}
+
+function Send-HumanLikeText {
+    param(
+        [string]$Text,
+        [int]$DelayMs = 35
+    )
+
+    Add-Type -AssemblyName System.Windows.Forms
+
+    foreach ($character in $Text.ToCharArray()) {
+        $keys = ConvertTo-SendKeysLiteral -Character ([string]$character)
+        if ($null -ne $keys) {
+            [System.Windows.Forms.SendKeys]::SendWait($keys)
+        }
+
+        if ($DelayMs -gt 0) {
+            Start-Sleep -Milliseconds $DelayMs
+        }
+    }
+}
+
+function Capture-ScreenArtifact {
+    param(
+        [string]$SharedRoot,
+        [string]$TaskId
+    )
+
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    $screenshotRoot = Join-Path $SharedRoot "screenshots"
+    Ensure-Directory -Path $screenshotRoot
+
+    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $path = Join-Path $screenshotRoot "notepad-$TaskId.png"
+
+    try {
+        $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+        $bitmap.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+        return $path
+    }
+    finally {
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
+}
+
+function Find-PythonCommand {
+    foreach ($name in @("python.exe", "python")) {
+        $command = Get-Command $name -ErrorAction SilentlyContinue
+        if ($command) {
+            return $command.Source
+        }
+    }
+
+    return $null
+}
+
+function Invoke-PythonNotepadTask {
+    param(
+        [string]$SharedRoot,
+        [object]$Task,
+        [string]$TaskId
+    )
+
+    $scriptPath = Join-Path $PSScriptRoot "dockvision_notepad_task.py"
+    if (-not (Test-Path $scriptPath)) {
+        throw "Python Notepad task script was not found at $scriptPath"
+    }
+
+    $pythonPath = Find-PythonCommand
+    if (-not $pythonPath) {
+        throw "Python is not available inside the Windows guest."
+    }
+
+    $payloadFile = Join-Path $env:TEMP "dockvision-$TaskId-payload.json"
+    if ($Task.PSObject.Properties.Name -contains "payload" -and $null -ne $Task.payload) {
+        $Task.payload | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 -Path $payloadFile
+    }
+    else {
+        "{}" | Set-Content -Encoding UTF8 -Path $payloadFile
+    }
+
+    $output = & $pythonPath $scriptPath --shared-root $SharedRoot --task-id $TaskId --payload-file $payloadFile 2>&1
+    $exitCode = $LASTEXITCODE
+    $outputText = ($output | Out-String).Trim()
+
+    if ($exitCode -ne 0) {
+        throw "Python Notepad task failed: $outputText"
+    }
+
+    return $outputText | ConvertFrom-Json
+}
+
+function Invoke-PowerShellNotepadTask {
+    param(
+        [string]$SharedRoot,
+        [object]$Task,
+        [string]$TaskId,
+        [string]$PythonWarning = ""
+    )
+
+    $text = [string](Get-TaskPayloadValue -Task $Task -Name "text" -DefaultValue (Get-DefaultNotepadText -TaskId $TaskId))
+    $typingDelayMs = [int](Get-TaskPayloadValue -Task $Task -Name "typingDelayMs" -DefaultValue 35)
+    $captureScreenshot = ConvertTo-Boolean (Get-TaskPayloadValue -Task $Task -Name "captureScreenshot" -DefaultValue $true)
+    $saveFile = ConvertTo-Boolean (Get-TaskPayloadValue -Task $Task -Name "saveFile" -DefaultValue $false)
+    $closeAfter = ConvertTo-Boolean (Get-TaskPayloadValue -Task $Task -Name "closeAfter" -DefaultValue $false)
+
+    $process = Start-Process "notepad.exe" -PassThru
+    $handle = Wait-ForMainWindow -Process $process
+    Focus-Window -WindowHandle $handle
+    Send-HumanLikeText -Text $text -DelayMs $typingDelayMs
+    Start-Sleep -Milliseconds 500
+
+    $artifacts = @{}
+    $details = @{
+        automationBackend = "powershell-sendkeys"
+        typedCharacterCount = $text.Length
+        typingDelayMs = $typingDelayMs
+        processId = $process.Id
+    }
+
+    if ($PythonWarning) {
+        $details.pythonWarning = $PythonWarning
+    }
+
+    if ($captureScreenshot) {
+        try {
+            $artifacts.screenshot = Capture-ScreenArtifact -SharedRoot $SharedRoot -TaskId $TaskId
+        }
+        catch {
+            $details.screenshotWarning = $_.Exception.Message
+        }
+    }
+
+    if ($saveFile) {
+        $artifactRoot = Join-Path $SharedRoot "artifacts"
+        Ensure-Directory -Path $artifactRoot
+        $fileName = [string](Get-TaskPayloadValue -Task $Task -Name "fileName" -DefaultValue "dockvision-notepad-$TaskId.txt")
+        $savePath = Join-Path $artifactRoot $fileName
+
+        Add-Type -AssemblyName System.Windows.Forms
+        [System.Windows.Forms.SendKeys]::SendWait("^s")
+        Start-Sleep -Milliseconds 800
+        Send-HumanLikeText -Text $savePath -DelayMs 5
+        [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+        Start-Sleep -Milliseconds 800
+        $artifacts.savedFile = $savePath
+    }
+
+    if ($closeAfter) {
+        Add-Type -AssemblyName System.Windows.Forms
+        [System.Windows.Forms.SendKeys]::SendWait("%{F4}")
+        $details.closeRequested = $true
+    }
+
+    return @{
+        taskId = $TaskId
+        status = "completed"
+        finishedUtc = Get-UtcTimestamp
+        message = "Notepad focused and typed through PowerShell UI automation."
+        artifacts = $artifacts
+        details = $details
+    }
 }
 
 function Mark-TaskFinished {
@@ -209,9 +492,19 @@ function Handle-Task {
             }
 
             "open_notepad" {
-                # Example task: launch Notepad in the guest VM.
-                Start-Process "notepad.exe"
-                Write-ResultFile -SharedRoot $SharedRoot -TaskId $taskId -Status "completed" -Message "Notepad launched successfully."
+                $pythonWarning = ""
+
+                try {
+                    $result = Invoke-PythonNotepadTask -SharedRoot $SharedRoot -Task $Task -TaskId $taskId
+                    Write-ResultObject -SharedRoot $SharedRoot -ResultObject $result
+                }
+                catch {
+                    $pythonWarning = $_.Exception.Message
+                    Write-InstallLog -SharedRoot $SharedRoot -Message ("Python Notepad path unavailable; using PowerShell fallback. " + $pythonWarning)
+
+                    $result = Invoke-PowerShellNotepadTask -SharedRoot $SharedRoot -Task $Task -TaskId $taskId -PythonWarning $pythonWarning
+                    Write-ResultObject -SharedRoot $SharedRoot -ResultObject $result
+                }
             }
 
             default {

@@ -4,17 +4,28 @@ async function parseJson(response) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.error || data.message || "Request failed");
+    const error = new Error(data.error || data.message || "Request failed");
+    error.status = response.status;
+    error.data = data;
+    throw error;
   }
 
-  return data; 
-
+  return data;
 }
 
-export async function startSmokeContainer() {
-  const response = await fetch(`${API_BASE}/api/docker/start-smoke`, {
+export async function startLauncher(payload = {}) {
+  const response = await fetch(`${API_BASE}/api/launcher/start`, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
   });
 
+  return parseJson(response);
+}
+
+export async function getLauncherStatus() {
+  const response = await fetch(`${API_BASE}/api/launcher/status`);
   return parseJson(response);
 }

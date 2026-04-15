@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navigation from '../components/Navigation';
+import { startLauncher } from '../lib/api';
 import '../confirmationPage.css';
 
 // sample python script and JSON config for testing
@@ -54,26 +55,14 @@ const Confirmation = ({
     setError("");
 
     try {
-      const response = await fetch("http://localhost:5000/api/launcher/start", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        }
-      });
-
-      const data = await response.json();
-
-      if (response.status === 409) {
+      await startLauncher();
+      navigate("/running-test");
+    } catch (err) {
+      if (err.status === 409) {
         navigate("/running-test");
         return;
       }
 
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to start launcher.");
-      }
-
-      navigate("/running-test");
-    } catch (err) {
       setError(err.message || "Failed to start launcher.");
     } finally {
       setIsLaunching(false);
