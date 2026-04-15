@@ -29,3 +29,7 @@ export async function getLauncherStatus() {
   const response = await fetch(`${API_BASE}/api/launcher/status`);
   return parseJson(response);
 }
+
+export function buildApiUrl(path) {
+  return `${API_BASE}${path}`;
+}
