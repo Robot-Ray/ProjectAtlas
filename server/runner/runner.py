@@ -203,12 +203,15 @@ def generate_oem_payload(paths: dict[str, Path], config: dict[str, Any]) -> None
     install_bat = oem_dir / "install.bat"
     agent_ps1 = oem_dir / "DockVisionAgent.ps1"
 
-    install_bat.write_text(
-        build_install_bat(config["agent"]["task_name"]),
-        encoding="utf-8",
-        newline="\r\n",
-    )
-    agent_ps1.write_text(build_agent_ps1(config), encoding="utf-8", newline="\r\n")
+    if not install_bat.exists():
+        install_bat.write_text(
+            build_install_bat(config["agent"]["task_name"]),
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    if not agent_ps1.exists():
+        agent_ps1.write_text(build_agent_ps1(config), encoding="utf-8", newline="\r\n")
 
 
 def build_docker_run_command(config: dict[str, Any], paths: dict[str, Path]) -> list[str]:
