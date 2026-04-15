@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Navigation from "../../components/Navigation";
-import { getLauncherStatus } from "../../lib/api";
+import { buildApiUrl, getLauncherStatus } from "../../lib/api";
 import "../../TestPage.css";
 
 const MetadataCard = ({ title, children }) => (
@@ -52,6 +52,9 @@ const TestPage = () => {
     ? Object.entries(agentResult.artifacts)
         .map(([name, value]) => `${name}: ${value}`)
         .join("\n")
+    : "";
+  const screenshotUrl = agentResult?.artifactUrls?.screenshot
+    ? buildApiUrl(agentResult.artifactUrls.screenshot)
     : "";
 
   const containerStatus = launchState?.status || "pending";
@@ -222,6 +225,30 @@ const TestPage = () => {
             <pre className="RunningTest-LogBlock">
               {agentInstallLog || "No install log captured yet."}
             </pre>
+          </MetadataCard>
+
+          <MetadataCard title="Latest Screenshot">
+            {screenshotUrl ? (
+              <div className="RunningTest-ScreenshotFrame">
+                <img
+                  className="RunningTest-Screenshot"
+                  src={screenshotUrl}
+                  alt="Latest Windows VM automation screenshot"
+                />
+                <a
+                  className="RunningTest-ScreenshotLink"
+                  href={screenshotUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open full size
+                </a>
+              </div>
+            ) : (
+              <p className="RunningTest-Placeholder">
+                No screenshot artifact has been reported yet.
+              </p>
+            )}
           </MetadataCard>
 
           <MetadataCard title="Artifacts">

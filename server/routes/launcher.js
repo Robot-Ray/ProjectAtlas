@@ -21,6 +21,7 @@ const installLogPath = path.join(windowsVmSharedRoot, "agent-install-log.txt");
 const taskFilePath = path.join(windowsVmSharedRoot, "agent-task.json");
 const resultFilePath = path.join(windowsVmSharedRoot, "agent-result.json");
 const runtimeManifestPath = path.join(windowsVmSharedRoot, "dockvision-runtime.json");
+const screenshotsRoot = path.join(windowsVmSharedRoot, "screenshots");
 const expectedAgentVersion = "0.3.0";
 const heartbeatOnlineWindowSeconds = 90;
 
@@ -213,6 +214,33 @@ function buildGuestAgentStatus(containerStatus, heartbeat, task) {
   };
 }
 
+function getFileNameFromArtifactPath(artifactPath) {
+  if (!artifactPath || typeof artifactPath !== "string") {
+    return null;
+  }
+
+  return path.win32.basename(artifactPath);
+}
+
+function withArtifactUrls(result) {
+  if (!result?.artifacts?.screenshot) {
+    return result;
+  }
+
+  const fileName = getFileNameFromArtifactPath(result.artifacts.screenshot);
+  if (!fileName) {
+    return result;
+  }
+
+  return {
+    ...result,
+    artifactUrls: {
+      ...(result.artifactUrls || {}),
+      screenshot: `/api/launcher/artifacts/screenshots/${encodeURIComponent(fileName)}`
+    }
+  };
+}
+
 async function runDocker(args) {
   return execFileAsync("docker", args, {
     cwd: windowsVmDir,
@@ -267,7 +295,7 @@ function buildStatusPayload(status) {
   const agentHeartbeat = readJsonIfExists(heartbeatFilePath);
   const agentInstallLog = readTextIfExists(installLogPath);
   const agentTask = readJsonIfExists(taskFilePath);
-  const agentResult = readJsonIfExists(resultFilePath);
+  const agentResult = withArtifactUrls(readJsonIfExists(resultFilePath));
   const guestRuntime = readJsonIfExists(runtimeManifestPath);
   const guestAgent = buildGuestAgentStatus(status, agentHeartbeat, agentTask);
 
@@ -408,6 +436,28 @@ router.get("/status", async (req, res) => {
       error: buildErrorMessage(err)
     });
   }
+});
+
+router.get("/artifacts/screenshots/:fileName", (req, res) => {
+  const fileName = path.basename(req.params.fileName);
+  const screenshotPath = path.resolve(screenshotsRoot, fileName);
+  const resolvedRoot = path.resolve(screenshotsRoot);
+
+  if (!screenshotPath.startsWith(`${resolvedRoot}${path.sep}`)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid screenshot artifact path."
+    });
+  }
+
+  if (!fs.existsSync(screenshotPath)) {
+    return res.status(404).json({
+      success: false,
+      message: "Screenshot artifact not found."
+    });
+  }
+
+  res.sendFile(screenshotPath);
 });
 
 module.exports = router;
